@@ -8,6 +8,8 @@ const fs = require('fs');
 const path = require('path');
 
 const store = require('./core/store');
+const i18n = require('./core/i18n');
+i18n.setCurrentLanguageSetting(store.getSettings()?.language || 'auto');
 const { Runtime } = require('./core/engine');
 const { Installer } = require('./core/installer');
 const { Sharer } = require('./core/sharer');
@@ -757,7 +759,7 @@ function createWindow({ show = true } = {}) {
     if (quitting) return;
     e.preventDefault();
     mainWindow.hide();
-    notify('ApkStart 仍在后台运行', '点击托盘图标可重新打开；右键托盘可退出。');
+    notify(i18n.t('notifications.backgroundRunning'), i18n.t('notifications.backgroundRunningDetail'));
   });
 
   if (IS_DEV) mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -790,7 +792,7 @@ function send(channel, payload) {
 function buildTray() {
   const icon = loadTrayIcon();
   try {
-    tray = new Tray(icon);
+    if (!tray || tray.isDestroyed()) tray = new Tray(icon);
   } catch (_) {
     return;
   }
@@ -798,9 +800,6 @@ function buildTray() {
     const apps = store.getApps().slice(0, 8);
     // 独立窗口模式主界面是隐藏的，托盘就成了唯一随时可达的入口 ——
     // 「关闭当前应用」必须放这里，否则用户根本没法关掉正在跑的应用。
-    // 判断「有没有应用在跑」要同时看 currentAppPkg 和 runtime.activeApps：
-    // endApp 会从 activeApps 里删掉包名，所以关掉后这里自动变 false。
-    // 但 currentAppPkg 可能还指着上一个应用（endApp 不清它），所以要双重判断。
     const hasRunning = currentAppPkg && runtime && runtime.activeApps
       ? runtime.activeApps.includes(currentAppPkg)
       : false;
@@ -808,36 +807,35 @@ function buildTray() {
       ? ((store.getApp(currentAppPkg) || {}).label || currentAppPkg)
       : '';
     const menu = Menu.buildFromTemplate([
-      { label: '打开 ApkStart', click: () => showWindow() },
+      { label: i18n.t('tray.open'), click: () => showWindow() },
       { type: 'separator' },
       ...(apps.length
         ? apps.map((a) => ({ label: a.label, click: () => runLaunch(a.package) }))
-        : [{ label: '还没有安装应用', enabled: false }]),
+        : [{ label: i18n.t('tray.noApps'), enabled: false }]),
       { type: 'separator' },
       {
-        label: hasRunning ? `关闭当前应用（${runningLabel}）` : '关闭当前应用',
+        label: hasRunning ? i18n.t('tray.closeCurrentWithLabel', [runningLabel]) : i18n.t('tray.closeCurrent'),
         enabled: !!hasRunning,
         click: () => {
           const pkg = currentAppPkg;
           if (!pkg) return;
-          // 复用 app:stop 的同一条路径，不在两处写同样的逻辑
           stopApp(pkg).then(() => refresh());
         },
       },
       {
-        label: displaySettings().landscape ? '切回竖屏（需重启运行时）' : '切换横屏（需重启运行时）',
+        label: displaySettings().landscape ? i18n.t('tray.toPortrait') : i18n.t('tray.toLandscape'),
         enabled: !!currentAppPkg,
         click: () => { restartForOrientation(!displaySettings().landscape).catch(() => {}); },
       },
       {
-        label: displaySettings().mode === 'fullscreen' ? '切回竖屏窗口' : '全屏（自适应屏幕）',
+        label: displaySettings().mode === 'fullscreen' ? i18n.t('tray.toWindow') : i18n.t('tray.toFullscreen'),
         click: () => { toggleDisplayMode(); },
       },
-      { label: '重建桌面/开始菜单快捷方式', click: () => { installer.ensureShortcuts().catch(() => {}); } },
-      { label: '同步共享目录', click: () => sharer.sync() },
-      { label: '设置', click: () => { showWindow(); send('ui:navigate', 'settings'); } },
+      { label: i18n.t('tray.rebuildShortcuts'), click: () => { installer.ensureShortcuts().catch(() => {}); } },
+      { label: i18n.t('tray.syncShared'), click: () => sharer.sync() },
+      { label: i18n.t('tray.settings'), click: () => { showWindow(); send('ui:navigate', 'settings'); } },
       {
-        label: updateInfo && updateInfo.hasUpdate ? `发现新版本 ${updateInfo.tag}` : '检查更新',
+        label: updateInfo && updateInfo.hasUpdate ? i18n.t('tray.newVersionFound', [updateInfo.tag]) : i18n.t('tray.checkUpdate'),
         click: async () => {
           showWindow();
           send('ui:navigate', 'settings');
@@ -846,22 +844,22 @@ function buildTray() {
           if (info && info.hasUpdate && info.asset) {
             const r = await dialog.showMessageBox(mainWindow || undefined, {
               type: 'question',
-              title: '发现新版本',
-              message: `ApkStart ${info.tag} 已发布，当前版本 v${app.getVersion()}。现在更新吗？`,
+              title: i18n.t('dialogs.newVersionTitle'),
+              message: i18n.t('dialogs.newVersionMessage', [info.tag, app.getVersion()]),
               detail: (info.notes || '').slice(0, 600),
-              buttons: ['立即更新', '稍后'],
+              buttons: [i18n.t('dialogs.updateNow'), i18n.t('dialogs.updateLater')],
               defaultId: 0,
               cancelId: 1,
             });
             if (r.response === 0) runUpdate();
           } else if (info && !info.hasUpdate) {
-            notify('已是最新版本', `ApkStart v${app.getVersion()}`);
+            notify(i18n.t('notifications.alreadyLatest'), `ApkStart v${app.getVersion()}`);
           }
         },
       },
       { type: 'separator' },
       {
-        label: '退出',
+        label: i18n.t('tray.exit'),
         click: async () => {
           try { appWin.close({ keepApp: true }); } catch (_) { /* ignore */ }
           quitting = true;
@@ -871,7 +869,7 @@ function buildTray() {
     ]);
     tray.setContextMenu(menu);
   };
-  tray.setToolTip('ApkStart — 安卓应用运行器');
+  tray.setToolTip(i18n.t('tray.tooltip'));
   // Windows 托盘的惯例是单击就打开主窗口（双击当然也可以）。
   // 之前只绑了 double-click，用户单击没反应，会以为托盘图标坏了。
   // 右键才出菜单，所以这里单击直接 showWindow 不会和菜单冲突。
@@ -904,7 +902,10 @@ async function runInstall(filePath) {
     send('install:done', result);
     // 新建的桌面图标要让资源管理器立刻刷新，否则用户会以为「没创建快捷方式」
     windowctl.refreshShell().catch(() => {});
-    notify('安装完成', `${result.app.label} 已安装${result.app.shortcutPath ? '，桌面快捷方式已创建' : ''}`);
+    notify(i18n.t('notifications.installDone'), i18n.t('notifications.installDoneDetail', [
+      result.app.label,
+      result.app.shortcutPath ? i18n.t('notifications.shortcutCreatedPart') : ''
+    ]));
     return result;
   } catch (e) {
     send('install:error', { message: e.message, file: filePath });
@@ -915,7 +916,7 @@ async function runInstall(filePath) {
       lastInstallErr = { msg: e.message, at: now };
       // 窗口在前台时用户已经看到界面里的提示，不必再弹系统通知
       if (!mainWindow || !mainWindow.isVisible() || mainWindow.isMinimized()) {
-        notify('安装失败', e.message.slice(0, 120));
+        notify(i18n.t('notifications.installFailed'), e.message.slice(0, 120));
       }
     }
     throw e;
@@ -1267,7 +1268,7 @@ function registerIpc() {
   // 选文件夹（用于把运行时/镜像/已装应用挪到非系统盘）
   ipcMain.handle('dialog:openDir', async (_e, defaultPath) => {
     const r = await dialog.showOpenDialog(mainWindow, {
-      title: '选择数据存放目录',
+      title: i18n.t('dialogs.selectDataDirTitle'),
       defaultPath: defaultPath || store.DATA_DIR,
       properties: ['openDirectory', 'createDirectory'],
     });
@@ -1297,8 +1298,8 @@ function registerIpc() {
 
   ipcMain.handle('apk:pick', async () => {
     const r = await dialog.showOpenDialog(mainWindow, {
-      title: '选择要安装的 APK',
-      filters: [{ name: 'Android 应用', extensions: ['apk', 'apks', 'xapk'] }],
+      title: i18n.t('dialogs.selectApkTitle'),
+      filters: [{ name: i18n.t('dialogs.apkFilter'), extensions: ['apk', 'apks', 'xapk'] }],
       properties: ['openFile', 'multiSelections'],
     });
     if (r.canceled) return [];
@@ -1384,6 +1385,16 @@ function registerIpc() {
   ipcMain.handle('settings:set', (_e, rawPatch) => {
     const patch = sanitizeResourcePatch(rawPatch);
     const next = store.saveSettings(patch);
+    if (patch && patch.language !== undefined) {
+      i18n.setCurrentLanguageSetting(patch.language);
+      buildTray();
+      const loc = i18n.resolveLocale(patch.language);
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('i18n:changed', { language: patch.language, locale: loc });
+        }
+      }
+    }
     if (patch && patch.autoStart !== undefined) applyAutoStart();
     if (patch && patch.display && appWin && appWin.isOpen) {
       // 竖屏基准尺寸变了：只影响后续打开的窗口大小，不打断正在跑的应用
@@ -1461,6 +1472,26 @@ function registerIpc() {
   // 用户手动点「一键部署」时强制重试，绕过失败冷却
   ipcMain.handle('runtime:autoDeploy', (_e, opts = {}) => autoDeploy({ force: !!opts.force }));
   // 关闭「深度裁剪」时把被 pm disable-user 的系统包恢复回来
+  // 国际化 IPC
+  ipcMain.handle('i18n:getLocale', () => {
+    const lang = store.getSettings().language || 'auto';
+    const loc = i18n.resolveLocale(lang);
+    return { language: lang, locale: loc };
+  });
+  ipcMain.handle('i18n:setLanguage', (_e, lang) => {
+    store.saveSettings({ language: lang });
+    i18n.setCurrentLanguageSetting(lang);
+    buildTray();
+    const loc = i18n.resolveLocale(lang);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('i18n:changed', { language: lang, locale: loc });
+      }
+    }
+    return { ok: true, language: lang, locale: loc };
+  });
+  ipcMain.handle('i18n:getTranslations', () => i18n.getDictionaries());
+
   ipcMain.handle('settings:restoreSystem', async () => runtime.restoreSystemApps());
   // 鼠标键位改变：只同步配置，不再无条件卸载（右键返回/滚轮可能仍需要钩子）
   ipcMain.handle('settings:refreshPointer', async () => { refreshPointerMapping(); return true; });
@@ -1592,8 +1623,8 @@ function registerIpc() {
   ipcMain.handle('drivers:import', async () => {
     const drv = require('./core/drivers');
     const r = await dialog.showOpenDialog(mainWindow, {
-      title: '选择驱动文件（.json）',
-      filters: [{ name: '驱动 JSON', extensions: ['json'] }],
+      title: i18n.t('dialogs.selectDriverTitle'),
+      filters: [{ name: i18n.t('dialogs.driverFilter'), extensions: ['json'] }],
       properties: ['openFile'],
     });
     if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true };
@@ -1612,9 +1643,9 @@ function registerIpc() {
     const overview = await driverOverview();
     const tpl = drv.templateFromHost(overview.host);
     const r = await dialog.showSaveDialog(mainWindow, {
-      title: '导出本机驱动模板',
+      title: i18n.t('dialogs.exportDriverTitle'),
       defaultPath: path.join(drv.userDir(store), `${tpl.id}.json`),
-      filters: [{ name: '驱动 JSON', extensions: ['json'] }],
+      filters: [{ name: i18n.t('dialogs.driverFilter'), extensions: ['json'] }],
     });
     if (r.canceled || !r.filePath) return { ok: false, canceled: true };
     fs.mkdirSync(path.dirname(r.filePath), { recursive: true });
@@ -1784,10 +1815,10 @@ function registerIpc() {
   ipcMain.handle('app:confirm', async (_e, opts = {}) => {
     const { response } = await dialog.showMessageBox(mainWindow || undefined, {
       type: opts.type || 'question',
-      title: opts.title || '确认',
+      title: opts.title || i18n.t('dialogs.confirm'),
       message: opts.message || '',
       detail: opts.detail || '',
-      buttons: ['取消', opts.okLabel || '确定'],
+      buttons: [opts.cancelLabel || i18n.t('dialogs.cancel'), opts.okLabel || i18n.t('dialogs.ok')],
       defaultId: 1,
       cancelId: 0,
       noLink: true,
@@ -1861,7 +1892,7 @@ function registerIpc() {
     try {
       const r = runtime.emulator.resizeDataPartition(mb);
       appLog(`data partition -> ${want}GB: ${JSON.stringify(r)}`);
-      if (r && r.ok) notify('数据分区已调整', `安卓可用空间约 ${want} GB${stopped ? '（运行时已重启）' : ''}`);
+      if (r && r.ok) notify(i18n.t('notifications.dataResized'), i18n.t('notifications.dataResizedDetail', [want, stopped ? i18n.t('notifications.runtimeRestartedPart') : '']));
       return { ok: !!(r && r.ok), stopped, ...r, ...runtime.emulator.dataInfo() };
     } catch (e) {
       return { ok: false, error: e.message };
@@ -1875,15 +1906,14 @@ function registerIpc() {
     const preview = await runtime.cleanup(pass);
     const { response } = await dialog.showMessageBox(mainWindow, {
       type: 'warning',
-      buttons: ['取消', `清理 ${preview.candidates.length} 项`],
+      buttons: [i18n.t('dialogs.cancel'), i18n.t('dialogs.cleanButton', [preview.candidates.length])],
       defaultId: 0,
       cancelId: 0,
-      title: '确认清理运行时缓存',
-      message: `将释放约 ${(preview.candidates.reduce((n, c) => n + c.size, 0) / 1048576).toFixed(0)} MB`,
+      title: i18n.t('dialogs.cleanCacheTitle'),
+      message: i18n.t('dialogs.cleanCacheMessage', [(preview.candidates.reduce((n, c) => n + c.size, 0) / 1048576).toFixed(0)]),
       detail: (opts.includeSnapshots
-        ? '会先停止运行时，再删除旧镜像、当前 AVD 的快速启动快照、锁文件和非活动 AVD 的缓存。已安装的应用本身保留（只清快照），'
-        : '只删除旧镜像、旧快照、锁文件和非活动 AVD 的缓存，已安装的应用会保留。')
-        + '此操作不可撤销，建议先导出诊断报告。',
+        ? i18n.t('dialogs.cleanCacheDetailWithSnapshots')
+        : i18n.t('dialogs.cleanCacheDetail')),
     });
     if (response !== 1) return { ...preview, cancelled: true };
     return runtime.cleanup({ apply: true, aggressive: !!opts.aggressive, includeSnapshots: !!opts.includeSnapshots });
@@ -2148,8 +2178,8 @@ function registerIpc() {
 
   ipcMain.handle('provision:importIso', async () => {
     const r = await dialog.showOpenDialog(mainWindow, {
-      title: '选择 Android-x86 / Bliss OS 系统镜像',
-      filters: [{ name: '系统镜像', extensions: ['iso', 'img'] }],
+      title: i18n.t('dialogs.selectIsoTitle'),
+      filters: [{ name: i18n.t('dialogs.isoFilter'), extensions: ['iso', 'img'] }],
       properties: ['openFile'],
     });
     if (r.canceled) return { ok: false, canceled: true };
@@ -2162,8 +2192,8 @@ function registerIpc() {
 
   ipcMain.handle('provision:importDisk', async () => {
     const r = await dialog.showOpenDialog(mainWindow, {
-      title: '选择已安装 Android 的虚拟磁盘',
-      filters: [{ name: '虚拟磁盘', extensions: ['qcow2', 'img', 'vmdk', 'raw'] }],
+      title: i18n.t('dialogs.selectDiskTitle'),
+      filters: [{ name: i18n.t('dialogs.diskFilter'), extensions: ['qcow2', 'img', 'vmdk', 'raw'] }],
       properties: ['openFile'],
     });
     if (r.canceled) return { ok: false, canceled: true };
@@ -2710,8 +2740,8 @@ if (!gotLock) {
       if (freeMB && freeMB < 3072) {
         appLog(`LOW_DISK free=${freeMB}MB dir=${store.DATA_DIR}`);
         setTimeout(() => {
-          notify('磁盘空间不足', `只剩 ${(freeMB / 1024).toFixed(1)} GB。请到「设置 → 系统集成」把安卓数据目录/运行时目录改到其他盘，或先清理磁盘。`);
-          send('toast', { type: 'error', message: `磁盘只剩 ${(freeMB / 1024).toFixed(1)} GB，安卓可能无法启动（设置 → 系统集成 可换盘）` });
+          notify(i18n.t('notifications.lowDisk'), i18n.t('notifications.lowDiskDetail', [(freeMB / 1024).toFixed(1)]));
+          send('toast', { type: 'error', message: i18n.t('notifications.lowDiskDetail', [(freeMB / 1024).toFixed(1)]) });
         }, 3000).unref?.();
       }
     }
@@ -2720,7 +2750,7 @@ if (!gotLock) {
     installer.ensureShortcuts().then((fixed) => {
       if (fixed && fixed.length) {
         windowctl.refreshShell().catch(() => {});
-        notify('快捷方式已补齐', fixed.join('、'));
+        notify(i18n.t('notifications.shortcutsRebuilt'), fixed.join('、'));
       }
     }).catch(() => {});
 

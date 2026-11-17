@@ -33,14 +33,14 @@ window.addEventListener('keydown', (e) => {
 
 function applyState(s) {
   if (!s) return;
-  $('appName').textContent = s.label || '应用';
+  $('appName').textContent = s.label || (window.t ? window.t('shell.appName') : '应用');
   $('bootName').textContent = s.label || '';
   const icon = s.iconUrl || '';
   if (icon) {
     $('appIcon').src = icon;
     $('bootIcon').src = icon;
   }
-  $('bootTip').textContent = s.tip || '';
+  $('bootTip').textContent = s.tip || (window.t ? window.t('shell.startingRuntime') : '正在启动安卓运行时…');
   if (s.ready) {
     const boot = $('boot');
     if (boot) {

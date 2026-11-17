@@ -16,19 +16,23 @@ Promise.all([
 ]).then(([first, bundled]) => {
   if (!first || !$('firstRun')) return;
   $('firstRun').hidden = false;
-  // 内置运行时（完整版安装包 / 微软商店 MSIX 版）：一个字都不该提「下载」。
-  // 用户抱怨的就是「装了 850MB 还在下镜像」，实际那只是把包里的压缩镜像
-  // 展开到用户目录，不需要联网。
-  if (bundled) {
-    if ($('firstRunTitle')) $('firstRunTitle').textContent = '首次启动 · 本地准备中（无需联网）';
-    if ($('firstRunList')) {
-      $('firstRunList').innerHTML = [
-        '<li>运行时组件已随安装包内置，不再下载任何东西</li>',
-        '<li>把系统镜像展开到用户目录（约 1 分钟，只需一次）</li>',
-        '<li>准备硬件加速与中文输入法</li>',
-        '<li>完成后双击 APK 或桌面图标即可秒开应用</li>',
-      ].join('');
-    }
+  const listKey = bundled ? 'splash.firstRunBundledList' : 'splash.firstRunList';
+  const titleKey = bundled ? 'splash.firstRunBundledTitle' : 'splash.firstRunTitle';
+  if ($('firstRunTitle')) $('firstRunTitle').textContent = window.t ? window.t(titleKey) : (bundled ? '首次启动 · 本地准备中（无需联网）' : '首次使用 · 自动配置中');
+  if ($('firstRunList')) {
+    const rawItems = window.t ? window.t(listKey) : null;
+    const items = Array.isArray(rawItems) ? rawItems : (bundled ? [
+      '运行时组件已随安装包内置，不再下载任何东西',
+      '把系统镜像展开到用户目录（约 1 分钟，只需一次）',
+      '准备硬件加速与中文输入法',
+      '完成后双击 APK 或桌面图标即可秒开应用',
+    ] : [
+      '下载 Android 运行时引擎（约 200MB，只需一次）',
+      '下载系统镜像（约 1.5GB，只需一次）',
+      '配置硬件加速与网络',
+      '完成后即可双击 APK 或桌面图标秒开应用',
+    ]);
+    $('firstRunList').innerHTML = items.map((it) => `<li>${it}</li>`).join('');
   }
 }).catch(() => {});
 

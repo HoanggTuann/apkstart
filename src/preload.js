@@ -1,5 +1,6 @@
 'use strict';
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const i18n = require('./core/i18n');
 
 const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 
@@ -144,6 +145,19 @@ contextBridge.exposeInMainWorld('apkstart', {
     setEnabled: (on) => invoke('keymap:setEnabled', on),
     isEnabled: () => invoke('keymap:isEnabled'),
     applyPreset: (pkg, presetId) => invoke('keymap:applyPreset', pkg, presetId),
+  },
+
+  // 国际化 i18n
+  i18n: {
+    t: (key, params) => i18n.t(key, params),
+    getLocale: () => invoke('i18n:getLocale'),
+    setLanguage: (lang) => invoke('i18n:setLanguage', lang),
+    getTranslations: () => invoke('i18n:getTranslations'),
+    onLanguageChange: (cb) => {
+      const handler = (_e, payload) => cb(payload);
+      ipcRenderer.on('i18n:changed', handler);
+      return () => ipcRenderer.removeListener('i18n:changed', handler);
+    },
   },
 
   pathForFile: (file) => webUtils.getPathForFile(file),

@@ -134,36 +134,34 @@ function renderGrid() {
   if (!hasAny) {
     const s = state.status;
     $('emptyHint').textContent = s && s.adbOk === false
-      ? '首次使用：打开右上角设置 → 运行时 → 一键完成，再回来安装应用即可。'
-      : '提示：所有应用共享同一个 Android 运行时，所以第二个应用的启动几乎是瞬时的。';
+      ? (window.t ? window.t('settings.runtime.setupNote') : '首次使用：打开右上角设置 → 运行时 → 一键完成，再回来安装应用即可。')
+      : (window.t ? window.t('settings.perf.idleNote') : '提示：所有应用共享同一个 Android 运行时，所以第二个应用的启动几乎是瞬时的。');
     grid.innerHTML = '';
     return;
   }
 
   // 末尾放一块「添加应用」虚线卡片。
-  // 目的不只是好看：应用少的时候下面是一大片空白，用户不知道该干什么；
-  // 这块卡片把「还能拖 APK 进来」这件事直接摆在眼前，也顺手填掉了空白。
   grid.innerHTML = apps.map((a) => `
     <div class="card" data-pkg="${esc(a.package)}" title="${esc(a.label)} · ${esc(a.package)}">
       ${a.pinned ? '<span class="pin">★</span>' : ''}
-      ${a.running ? '<span class="badge-run" title="正在运行"></span>' : ''}
+      ${a.running ? `<span class="badge-run" title="${esc(window.t ? window.t('statusbar.running') : '正在运行')}"></span>` : ''}
       <div class="icon">
         ${a.iconUrl
           ? `<img src="${esc(a.iconUrl)}" alt="" draggable="false" />`
           : `<div class="fallback" style="background:${esc(a.accent || '#9aa6b2')}">${esc(initialOf(a.label))}</div>`}
       </div>
       <div class="name">${esc(a.label)}</div>
-      <div class="meta">${a.running ? '运行中' : `v${esc(a.versionName)}${a.lastLaunchAt ? ' · ' + relTime(a.lastLaunchAt) : ''}`}</div>
-      <div class="open-hint">${a.running ? '切换到前台' : '打开'}</div>
+      <div class="meta">${a.running ? esc(window.t ? window.t('statusbar.running') : '运行中') : `v${esc(a.versionName)}${a.lastLaunchAt ? ' · ' + relTime(a.lastLaunchAt) : ''}`}</div>
+      <div class="open-hint">${a.running ? esc(window.t ? window.t('ctxmenu.open') : '切换到前台') : esc(window.t ? window.t('ctxmenu.open') : '打开')}</div>
     </div>
   `).join('') + `
-    <div class="card card-add" id="cardAdd" role="button" tabindex="0" title="拖入 APK 文件，或点击选择">
+    <div class="card card-add" id="cardAdd" role="button" tabindex="0" title="${esc(window.t ? window.t('empty.title') : '拖入 APK 文件，或点击选择')}">
       <div class="add-plus" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round"><path d="M12 6v12"/><path d="M6 12h12"/></svg>
       </div>
-      <div class="name">添加应用</div>
-      <div class="meta">拖入 APK 即可安装</div>
+      <div class="name">${esc(window.t ? window.t('toolbar.install') : '添加应用')}</div>
+      <div class="meta">${esc(window.t ? window.t('dropzone.title') : '拖入 APK 即可安装')}</div>
     </div>
   `;
 }
@@ -182,7 +180,11 @@ async function refreshApps() {
 
 function updateStats() {
   const n = state.apps.length;
-  $('statusStats').textContent = n ? `${n} 个应用` : '暂无应用';
+  if (window.t) {
+    $('statusStats').textContent = n ? window.t('statusbar.appCount', [n]) : window.t('statusbar.noApps', null, '暂无应用');
+  } else {
+    $('statusStats').textContent = n ? `${n} 个应用` : '暂无应用';
+  }
 }
 
 async function refreshStatus() {
@@ -580,43 +582,74 @@ async function launchApp(pkg) {
 async function createShortcut(pkg) {
   try {
     const r = await api.createShortcut(pkg);
-    toast({ title: '桌面快捷方式已创建', body: r.path, type: 'ok' });
+    toast({
+      title: window.t ? window.t('toasts.shortcutCreated', null, '桌面快捷方式已创建') : '桌面快捷方式已创建',
+      body: r.path,
+      type: 'ok',
+    });
     refreshApps();
   } catch (e) {
-    toast({ title: '创建快捷方式失败', body: e.message, type: 'error' });
+    toast({
+      title: window.t ? window.t('toasts.shortcutFailed', null, '创建快捷方式失败') : '创建快捷方式失败',
+      body: e.message,
+      type: 'error',
+    });
   }
 }
 
 async function uninstall(pkg) {
   const app = state.apps.find((a) => a.package === pkg);
   if (!app) return;
-  const ok = window.confirm(`确定卸载「${app.label}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。`);
+  let ok = false;
+  if (api.confirm) {
+    const res = await api.confirm({
+      title: window.t ? window.t('dialogs.uninstallTitle', null, '卸载应用') : '卸载应用',
+      message: window.t ? window.t('dialogs.uninstallMessage', [app.label]) : `确定卸载 “${app.label}” 吗？`,
+      detail: window.t ? window.t('dialogs.uninstallDetail') : '该应用的快捷方式与全部数据都会被删除。',
+      okLabel: window.t ? window.t('ctxmenu.uninstall', null, '卸载') : '卸载',
+      danger: true,
+    });
+    ok = res && res.response === 1;
+  } else {
+    const msg = window.t
+      ? window.t('dialogs.uninstallMessage', [app.label])
+      : `确定卸载「${app.label}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。`;
+    ok = window.confirm(msg);
+  }
   if (!ok) return;
   try {
     await api.uninstall(pkg);
-    toast({ title: '已卸载', body: app.label, type: 'ok' });
+    toast({
+      title: window.t ? window.t('toasts.uninstalled', null, '已卸载') : '已卸载',
+      body: app.label,
+      type: 'ok',
+    });
     refreshApps();
   } catch (e) {
-    toast({ title: '卸载失败', body: e.message, type: 'error' });
+    toast({
+      title: window.t ? window.t('toasts.uninstallFailed', null, '卸载失败') : '卸载失败',
+      body: e.message,
+      type: 'error',
+    });
   }
 }
 
 /* ---------------- 右键菜单 ---------------- */
 
 const MENU_ITEMS = [
-  { key: 'open', label: '打开应用', kbd: 'Enter' },
+  { key: 'open', label: '打开应用', kbd: 'Enter', i18nKey: 'ctxmenu.open' },
   // 只在应用真的在运行时才出现（见 showMenu 里的过滤）。
   // 以前完全没有这一项，独立窗口模式下又没有可点的关闭按钮，
   // 应用一起来就关不掉，只能退到托盘退出整个 ApkStart。
-  { key: 'stop', label: '关闭应用', onlyRunning: true },
-  { key: 'shortcut', label: '创建桌面快捷方式' },
-  { key: 'pin', label: '固定到顶部' },
-  { key: 'keymap', label: '按键映射…' },
+  { key: 'stop', label: '关闭应用', onlyRunning: true, i18nKey: 'ctxmenu.stop' },
+  { key: 'shortcut', label: '创建桌面快捷方式', i18nKey: 'ctxmenu.shortcut' },
+  { key: 'pin', label: '固定到顶部', i18nKey: 'ctxmenu.pin' },
+  { key: 'keymap', label: '按键映射…', i18nKey: 'ctxmenu.keymap' },
   { divider: true },
-  { key: 'reveal', label: '打开 APK 所在位置' },
-  { key: 'clear', label: '清除应用数据' },
+  { key: 'reveal', label: '打开 APK 所在位置', i18nKey: 'ctxmenu.reveal' },
+  { key: 'clear', label: '清除应用数据', i18nKey: 'ctxmenu.clear' },
   { divider: true },
-  { key: 'uninstall', label: '卸载', danger: true },
+  { key: 'uninstall', label: '卸载', danger: true, i18nKey: 'ctxmenu.uninstall' },
 ];
 
 function showMenu(x, y, pkg) {
@@ -626,7 +659,14 @@ function showMenu(x, y, pkg) {
   const items = MENU_ITEMS.filter((it) => !it.onlyRunning || (app && app.running));
   menu.innerHTML = items.map((it) => {
     if (it.divider) return '<div class="divider"></div>';
-    const label = it.key === 'pin' ? (app && app.pinned ? '取消固定' : '固定到顶部') : it.label;
+    let label = it.label;
+    if (it.key === 'pin') {
+      label = app && app.pinned
+        ? (window.t ? window.t('ctxmenu.unpin', null, '取消固定') : '取消固定')
+        : (window.t ? window.t('ctxmenu.pin', null, '固定到顶部') : '固定到顶部');
+    } else if (it.i18nKey && window.t) {
+      label = window.t(it.i18nKey, null, it.label);
+    }
     return `<div class="item ${it.danger ? 'danger' : ''}" data-key="${it.key}" data-act="${it.key}">
       <span>${esc(label)}</span>${it.kbd ? `<span class="k">${it.kbd}</span>` : ''}
     </div>`;
@@ -654,12 +694,24 @@ async function handleMenu(act) {
       try {
         const r = await api.stop(pkg);
         if (r && r.ok) {
-          toast({ title: '已关闭', body: app.label, type: 'ok' });
+          toast({
+            title: window.t ? window.t('toasts.closed', null, '已关闭') : '已关闭',
+            body: app.label,
+            type: 'ok',
+          });
         } else {
-          toast({ title: '关闭失败', body: (r && r.error) || '未知错误', type: 'error' });
+          toast({
+            title: window.t ? window.t('toasts.closeFailed', null, '关闭失败') : '关闭失败',
+            body: (r && r.error) || '未知错误',
+            type: 'error',
+          });
         }
       } catch (e) {
-        toast({ title: '关闭失败', body: e.message, type: 'error' });
+        toast({
+          title: window.t ? window.t('toasts.closeFailed', null, '关闭失败') : '关闭失败',
+          body: e.message,
+          type: 'error',
+        });
       }
       return refreshApps();
     }
@@ -668,12 +720,33 @@ async function handleMenu(act) {
     case 'keymap': return showKeymapPicker(pkg, app.label);
     case 'reveal': return api.revealApk(pkg);
     case 'clear': {
-      if (!window.confirm(`清除「${app.label}」的全部数据？此操作不可撤销。`)) return;
+      let ok = false;
+      if (api.confirm) {
+        const res = await api.confirm({
+          title: window.t ? window.t('dialogs.clearDataTitle', null, '清除数据') : '清除数据',
+          message: window.t ? window.t('dialogs.clearDataMessage', [app.label]) : `确定清空 “${app.label}” 的全部本地数据？`,
+          detail: window.t ? window.t('dialogs.clearDataDetail') : '应用会被还原成刚安装的状态，已登录的账号和本地缓存都会被删掉。应用本身不会被卸载。',
+          okLabel: window.t ? window.t('ctxmenu.clear', null, '清除应用数据') : '清除应用数据',
+          danger: true,
+        });
+        ok = res && res.response === 1;
+      } else {
+        ok = window.confirm(window.t ? window.t('dialogs.clearDataMessage', [app.label]) : `确定清空 “${app.label}” 的全部本地数据？`);
+      }
+      if (!ok) return;
       try {
         await api.clearData(pkg);
-        toast({ title: '数据已清除', body: app.label, type: 'ok' });
+        toast({
+          title: window.t ? window.t('toasts.dataCleared', null, '数据已清除') : '数据已清除',
+          body: app.label,
+          type: 'ok',
+        });
       } catch (e) {
-        toast({ title: '清除失败', body: e.message, type: 'error' });
+        toast({
+          title: window.t ? window.t('toasts.clearFailed', null, '清除失败') : '清除失败',
+          body: e.message,
+          type: 'error',
+        });
       }
       return;
     }
@@ -998,6 +1071,7 @@ async function refreshDrivers() {
 function fillSettings(s) {
   syncBackendFields();
   refreshDrivers().catch(() => {});
+  if ($('setLanguage')) $('setLanguage').value = s.language || 'auto';
   $('setAdbPath').value = s.adbPath || '';
   $('setSystemImage').value = s.runtime.isoPath || '';
   $('setMemory').value = s.engine.memoryMB;
@@ -1289,6 +1363,27 @@ function bindSettings() {
     });
   }
 
+  if ($('setLanguage')) {
+    $('setLanguage').addEventListener('change', async (e) => {
+      const val = e.target.value;
+      state.settings = await api.setSettings({ language: val });
+      if (api.i18n && api.i18n.setLanguage) {
+        await api.i18n.setLanguage(val);
+      }
+      if (window.setI18nLocale) {
+        const targetLocale = val === 'auto' ? ((await api.i18n.getLocale())?.locale || 'en-US') : val;
+        window.setI18nLocale(targetLocale);
+      }
+      renderGrid();
+      updateStats();
+      refreshStatus();
+      toast({
+        title: window.t ? window.t('toasts.languageChanged', null, '界面语言已更新') : '界面语言已更新',
+        type: 'ok',
+      });
+    });
+  }
+
   $('setAdbPath').addEventListener('change', (e) => save({ adbPath: e.target.value.trim() }));
   $('setSystemImage').addEventListener('change', (e) => save({ runtime: { isoPath: e.target.value.trim() } }));
   // 内存 / 核心：填了具体值就关掉「自动」，填 0 又回到自动。
@@ -1319,7 +1414,11 @@ function bindSettings() {
   if ($('setLocale')) {
     $('setLocale').addEventListener('change', async (e) => {
       state.settings = await api.setSettings({ engine: { locale: e.target.value } });
-      toast({ title: '系统语言已更新', body: '下次重启安卓运行时后生效', type: 'ok' });
+      toast({
+        title: window.t ? window.t('toasts.localeUpdated', null, '系统语言已更新') : '系统语言已更新',
+        body: window.t ? window.t('toasts.localeUpdatedBody', null, '下次重启安卓运行时后生效') : '下次重启安卓运行时后生效',
+        type: 'ok',
+      });
     });
   }
   if ($('setChineseIme')) {
@@ -2075,6 +2174,11 @@ async function init() {
   bindUpdate();
   bindAndroid();
   bindWelcome();
+  window.addEventListener('app:locale-changed', () => {
+    renderGrid();
+    updateStats();
+    refreshStatus();
+  });
   state.settings = await api.getSettings();
   await refreshStatus();
   await refreshApps();
@@ -2091,6 +2195,13 @@ async function init() {
 let startupInfo = null;
 
 function greetingOf(h) {
+  if (window.t) {
+    if (h < 5) return window.t('welcome.greetingNight', null, '夜深了');
+    if (h < 11) return window.t('welcome.greetingMorning', null, '早上好');
+    if (h < 13) return window.t('welcome.greetingNoon', null, '中午好');
+    if (h < 18) return window.t('welcome.greetingAfternoon', null, '下午好');
+    return window.t('welcome.greetingEvening', null, '晚上好');
+  }
   if (h < 5) return '夜深了';
   if (h < 11) return '早上好';
   if (h < 13) return '中午好';
@@ -2125,17 +2236,23 @@ async function maybeShowWelcome() {
   if (!(startupInfo && startupInfo.autostart) && cfg.lastDate === today) return;
 
   const h = new Date().getHours();
-  $('welcomeHi').textContent = `${greetingOf(h)}，欢迎回来`;
+  const greeting = greetingOf(h);
+  $('welcomeHi').textContent = window.t
+    ? `${greeting}, ${window.t('welcome.welcomeBack', null, '欢迎回来')}`
+    : `${greeting}，欢迎回来`;
   const ver = (startupInfo && startupInfo.version) || (state.status && state.status.version) || '';
   const ready = state.status && state.status.ready;
-  $('welcomeSub').textContent = `ApkStart${ver ? ` v${ver}` : ''} · ${ready ? '运行时就绪，点开即用' : '运行时会按需自动准备'}`;
+  const statusTip = ready
+    ? (window.t ? window.t('welcome.readyTip', null, '运行时就绪，点开即用') : '运行时就绪，点开即用')
+    : (window.t ? window.t('welcome.standbyTip', null, '运行时会按需自动准备') : '运行时会按需自动准备');
+  $('welcomeSub').textContent = `ApkStart${ver ? ` v${ver}` : ''} · ${statusTip}`;
 
   const apps = (state.apps || []).length;
   const dev = $('statusDevice') ? $('statusDevice').textContent.trim() : '';
   const chips = [
-    { k: String(apps), v: '已装应用' },
-    { k: ready ? '就绪' : '待命', v: '安卓运行时' },
-    { k: dev ? dev.replace(/^.*?(\d+)/, '$1') : '—', v: '设备 / 端口' },
+    { k: String(apps), v: window.t ? window.t('welcome.chipApps', null, '已装应用') : '已装应用' },
+    { k: ready ? (window.t ? window.t('welcome.chipReady', null, '就绪') : '就绪') : (window.t ? window.t('welcome.chipStandby', null, '待命') : '待命'), v: window.t ? window.t('welcome.chipRuntime', null, '安卓运行时') : '安卓运行时' },
+    { k: dev ? dev.replace(/^.*?(\d+)/, '$1') : '—', v: window.t ? window.t('welcome.chipDevice', null, '设备 / 端口') : '设备 / 端口' },
   ];
   $('welcomeStats').innerHTML = chips
     .map((c) => `<div class="welcome-stat"><b>${esc(c.k)}</b><span>${esc(c.v)}</span></div>`)
