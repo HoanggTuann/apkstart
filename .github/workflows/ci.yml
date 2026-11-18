@@ -64,15 +64,12 @@ jobs:
       - name: åŽ‹ç¼©ä¾¿æºç‰ˆï¼ˆ7-Zipï¼‰
         shell: pwsh
         run: |
-          $ver = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $zipName = "ApkStart-v$ver-win64-portable.zip"
-          node build/zip.js dist/ApkStart-win64-portable $zipName --limit-mb 120
-          Get-Item $zipName | Select-Object Name, Length
-          "ZIP_NAME=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          node build/zip.js dist/ApkStart-win64-portable ApkStart-win64-portable.zip --limit-mb 120
+          Get-Item ApkStart-win64-portable.zip | Select-Object Name, Length
 
       - name: ä¸Šä¼ æž„å»ºäº§ç‰© (GitHub Artifact)
         uses: actions/upload-artifact@v4
         with:
           name: ApkStart-win64-portable
-          path: ${{ env.ZIP_NAME }}
+          path: ApkStart-win64-portable.zip
           retention-days: 14
