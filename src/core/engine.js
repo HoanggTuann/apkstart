@@ -1013,10 +1013,23 @@ class Runtime {
     // 单文件发行版的镜像是压缩的，先展开（已展开过就秒过）。
     // 展开失败不要把错误吞掉：否则后面 checkEnv() 只会说「还差系统镜像」，
     // 用户会以为是没下载，而不是解压失败（磁盘满 / 文件损坏）。
+    let matErr = null;
     await this.provisioner.materializeImages(onLog).catch((e) => {
+      matErr = e;
       onLog(`系统镜像展开失败：${e.message}`);
       this.log(`materialize failed: ${e.message}`);
     });
+    if (matErr) {
+      return {
+        ok: false,
+        error: matErr.message,
+        diagnosis: {
+          code: 'MATERIALIZE_FAILED',
+          title: '系统镜像展开失败',
+          hint: matErr.message,
+        },
+      };
+    }
     const env = await this.provisioner.checkEnv();
 
     // emulator 路径：镜像即系统，没有"安装到磁盘"这一步
