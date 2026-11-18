@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: 单元测试（Windows / Node ${{ matrix.node }}）
+    name: å•å…ƒæµ‹è¯•ï¼ˆWindows / Node ${{ matrix.node }}ï¼‰
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -23,20 +23,56 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
-      # 单元测试不需要 Electron 二进制，跳过 188MB 下载以加快 CI
-      - name: 安装依赖
+      # å•å…ƒæµ‹è¯•ä¸éœ€è¦ Electron äºŒè¿›åˆ¶ï¼Œè·³è¿‡ 188MB ä¸‹è½½ä»¥åŠ å¿« CI
+      - name: å®‰è£…ä¾èµ–
         run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
-      - name: 运行测试
+      - name: è¿è¡Œæµ‹è¯•
         run: npm test
 
-      # 直接驱动 agent.ps1 内嵌 C# 的钩子回调，防止键位映射被改坏
-      - name: 鼠标钩子逻辑冒烟测试
+      # ç›´æŽ¥é©±åŠ¨ agent.ps1 å†…åµŒ C# çš„é’©å­å›žè°ƒï¼Œé˜²æ­¢é”®ä½æ˜ å°„è¢«æ”¹å
+      - name: é¼ æ ‡é’©å­é€»è¾‘å†’çƒŸæµ‹è¯•
         shell: powershell
         run: |
           Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
           $out = & .\test\pointer-hook-logic.ps1
           $out | ForEach-Object { Write-Host $_ }
           if (-not ($out -contains 'POINTER_HOOK_LOGIC_OK')) { exit 1 }
+
+  build:
+    name: æž„å»ºä¾¿æºç‰ˆï¼ˆWindows x64ï¼‰
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: å®‰è£…ä¾èµ–ï¼ˆå« Electron è¿è¡Œæ—¶ï¼‰
+        run: npm ci
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+
+      - name: æ‰“åŒ…ä¾¿æºç‰ˆ
+        run: npm run pack
+
+      - name: åŽ‹ç¼©ä¾¿æºç‰ˆï¼ˆ7-Zipï¼‰
+        shell: pwsh
+        run: |
+          $ver = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $zipName = "ApkStart-v$ver-win64-portable.zip"
+          node build/zip.js dist/ApkStart-win64-portable $zipName --limit-mb 120
+          Get-Item $zipName | Select-Object Name, Length
+          "ZIP_NAME=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: ä¸Šä¼ æž„å»ºäº§ç‰© (GitHub Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ApkStart-win64-portable
+          path: ${{ env.ZIP_NAME }}
+          retention-days: 14
