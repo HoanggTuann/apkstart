@@ -472,5 +472,11 @@
       "douyinTip": "Douyin · RoutineMIKU",
       "contactAuthor": "Douyin · @RoutineMIKU (Liên hệ tác giả)"
     }
+  },
+  "toast": {
+    "runtimeReady": "Môi trường đã sẵn sàng",
+    "runtimeReadyBody": "Bây giờ bạn có thể kéo tệp APK vào cửa sổ hoặc nhấp đúp biểu tượng trên màn hình.",
+    "bootIncomplete": "Khởi động chưa hoàn tất",
+    "checkReport": "Vui lòng xuất báo cáo chẩn đoán để kiểm tra nguyên nhân"
   }
 }
