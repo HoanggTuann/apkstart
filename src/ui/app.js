@@ -420,8 +420,8 @@ async function deployAll() {
     const started = await api.runtimeStart();
     await refreshStatus();
     toast(started && started.ok
-      ? { title: '运行时已就绪', body: '现在把 APK 拖进窗口，或双击桌面图标即可。', type: 'ok' }
-      : { title: '开机未完成', body: (started && started.error) || '请导出诊断报告查看原因', type: 'error', sticky: true });
+      ? { title: window.t ? window.t('toast.runtimeReady', null, '运行时已就绪') : '运行时已就绪', body: window.t ? window.t('toast.runtimeReadyBody', null, '现在把 APK 拖进窗口，或双击桌面图标即可。') : '现在把 APK 拖进窗口，或双击桌面图标即可。', type: 'ok' }
+      : { title: window.t ? window.t('toast.bootIncomplete', null, '开机未完成') : '开机未完成', body: (started && started.error) || (window.t ? window.t('toast.checkReport', null, '请导出诊断报告查看原因') : '请导出诊断报告查看原因'), type: 'error', sticky: true });
   } catch (e) {
     toast({ title: '准备失败', body: e.message, type: 'error', sticky: true });
   } finally {
