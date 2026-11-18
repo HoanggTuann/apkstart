@@ -102,7 +102,7 @@ jobs:
       # ä¸‹é¢ needs: build çš„ full job ä¼šè¢«æ•´æ®µè·³è¿‡ï¼Œè¿ž GitHub è‡ªå·±çš„ Setup / è¿è¡Œæ—¶æ•´åŒ…éƒ½å‘ä¸å‡ºã€‚
       # ç¼º token æ—¶è¿™ä¸€æ­¥ä»ä¼šåœ¨æ—¥å¿—é‡Œæ ‡çº¢ï¼ˆcontinue-on-error æ˜¯ã€Œå¯è§ä½†éžè‡´å‘½ã€ï¼‰ï¼Œä¸é™é»˜ã€‚
       - name: åŒæ­¥ä¾¿æºç‰ˆåˆ° Gitee
-        if: github.repository == 'RoutineMiku/apkstart' || secrets.GITEE_TOKEN != ''
+        if: github.repository == 'RoutineMiku/apkstart'
         continue-on-error: true
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
