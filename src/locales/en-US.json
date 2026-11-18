@@ -472,5 +472,11 @@
       "douyinTip": "Douyin · RoutineMIKU",
       "contactAuthor": "Douyin · @RoutineMIKU (Contact Author)"
     }
+  },
+  "toast": {
+    "runtimeReady": "Runtime is ready",
+    "runtimeReadyBody": "You can now drag APK files into the window or double-click desktop shortcuts.",
+    "bootIncomplete": "Startup incomplete",
+    "checkReport": "Please export the diagnostic report to investigate the cause"
   }
 }
