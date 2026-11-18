@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: å•å…ƒæµ‹è¯•ï¼ˆWindows / Node ${{ matrix.node }}ï¼‰
+    name: Unit Tests (Windows / Node ${{ matrix.node }})
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -23,17 +23,15 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
-      # å•å…ƒæµ‹è¯•ä¸éœ€è¦ Electron äºŒè¿›åˆ¶ï¼Œè·³è¿‡ 188MB ä¸‹è½½ä»¥åŠ å¿« CI
-      - name: å®‰è£…ä¾èµ–
+      - name: Install dependencies
         run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
-      - name: è¿è¡Œæµ‹è¯•
+      - name: Run unit tests
         run: npm test
 
-      # ç›´æŽ¥é©±åŠ¨ agent.ps1 å†…åµŒ C# çš„é’©å­å›žè°ƒï¼Œé˜²æ­¢é”®ä½æ˜ å°„è¢«æ”¹å
-      - name: é¼ æ ‡é’©å­é€»è¾‘å†’çƒŸæµ‹è¯•
+      - name: Mouse hook smoke test
         shell: powershell
         run: |
           Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
@@ -42,7 +40,7 @@ jobs:
           if (-not ($out -contains 'POINTER_HOOK_LOGIC_OK')) { exit 1 }
 
   build:
-    name: æž„å»ºä¾¿æºç‰ˆï¼ˆWindows x64ï¼‰
+    name: Build Portable (Windows x64)
     needs: test
     runs-on: windows-latest
     steps:
@@ -53,21 +51,21 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: å®‰è£…ä¾èµ–ï¼ˆå« Electron è¿è¡Œæ—¶ï¼‰
+      - name: Install dependencies (with Electron)
         run: npm ci
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
-      - name: æ‰“åŒ…ä¾¿æºç‰ˆ
+      - name: Build portable package
         run: npm run pack
 
-      - name: åŽ‹ç¼©ä¾¿æºç‰ˆï¼ˆ7-Zipï¼‰
+      - name: Compress portable package
         shell: pwsh
         run: |
           node build/zip.js dist/ApkStart-win64-portable ApkStart-win64-portable.zip --limit-mb 120
           Get-Item ApkStart-win64-portable.zip | Select-Object Name, Length
 
-      - name: ä¸Šä¼ æž„å»ºäº§ç‰© (GitHub Artifact)
+      - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
           name: ApkStart-win64-portable
