@@ -472,5 +472,11 @@
       "douyinTip": "抖音 · 日常MIKU",
       "contactAuthor": "抖音 · @日常MIKU（联系作者）"
     }
+  },
+  "toast": {
+    "runtimeReady": "运行时已就绪",
+    "runtimeReadyBody": "现在把 APK 拖进窗口，或双击桌面图标即可。",
+    "bootIncomplete": "开机未完成",
+    "checkReport": "请导出诊断报告查看原因"
   }
 }
