@@ -4,60 +4,78 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release Tag (vÃ­ dá»¥: v0.5.8). Äá»ƒ trá»‘ng sáº½ tá»± láº¥y theo version trong package.json'
+        required: false
+        default: ''
 
 permissions:
   contents: write
 
 jobs:
   build:
-    name: 构建便携版并发布
+    name: æž„å»ºä¾¿æºç‰ˆå¹¶å‘å¸ƒ
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: è§£æžç‰ˆæœ¬ Tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          if (-not $tag) {
+            $tag = "${{ github.ref_name }}"
+            if ($tag -eq 'main' -or $tag -eq 'master') {
+              $ver = (Get-Content package.json -Raw | ConvertFrom-Json).version
+              $tag = "v$ver"
+            }
+          }
+          if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
+          Write-Host "Release Tag: $tag"
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: 安装依赖（含 Electron 运行时）
+      - name: å®‰è£…ä¾èµ–ï¼ˆå« Electron è¿è¡Œæ—¶ï¼‰
         run: npm ci
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
-      - name: 测试
+      - name: æµ‹è¯•
         run: npm test
 
-      - name: 打包便携版
+      - name: æ‰“åŒ…ä¾¿æºç‰ˆ
         run: npm run pack
 
-      # 用 7-Zip 而不是 Compress-Archive：同一个目录，.NET deflate 压出来 105MB，
-      # 7-Zip -mx=9 只要 99.6MB —— 差这 5MB 就决定 Gitee 上放的是「一个能直接解压的
-      # zip」还是「两个必须手工拼接的 part」。build/zip.js 还带体积闸门：超过
-      # 100MiB 直接让 job 失败，避免以后又悄悄退回分片包。
-      - name: 压缩产物（7-Zip，体积闸门 100MiB）
+      # ç”¨ 7-Zip è€Œä¸æ˜¯ Compress-Archiveï¼šåŒä¸€ä¸ªç›®å½•ï¼Œ.NET deflate åŽ‹å‡ºæ¥ 105MBï¼Œ
+      # 7-Zip -mx=9 åªè¦ 99.6MB â€”â€” å·®è¿™ 5MB å°±å†³å®š Gitee ä¸Šæ”¾çš„æ˜¯ã€Œä¸€ä¸ªèƒ½ç›´æŽ¥è§£åŽ‹çš„
+      # zipã€è¿˜æ˜¯ã€Œä¸¤ä¸ªå¿…é¡»æ‰‹å·¥æ‹¼æŽ¥çš„ partã€ã€‚build/zip.js è¿˜å¸¦ä½“ç§¯é—¸é—¨ï¼šè¶…è¿‡
+      # 100MiB ç›´æŽ¥è®© job å¤±è´¥ï¼Œé¿å…ä»¥åŽåˆæ‚„æ‚„é€€å›žåˆ†ç‰‡åŒ…ã€‚
+      - name: åŽ‹ç¼©äº§ç‰©ï¼ˆ7-Zipï¼Œä½“ç§¯é—¸é—¨ 100MiBï¼‰
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
+          $tag = $env:RELEASE_TAG
           node build/zip.js dist/ApkStart-win64-portable "ApkStart-$tag-win64-portable.zip" --limit-mb 100
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-Item "ApkStart-$tag-win64-portable.zip" | Select-Object Name, Length
 
-      # 创建 Release 并上传轻量便携版（壳层极小，运行时首次启动按需下载）
-      - name: 创建 Release
+      # åˆ›å»º Release å¹¶ä¸Šä¼ è½»é‡ä¾¿æºç‰ˆï¼ˆå£³å±‚æžå°ï¼Œè¿è¡Œæ—¶é¦–æ¬¡å¯åŠ¨æŒ‰éœ€ä¸‹è½½ï¼‰
+      - name: åˆ›å»º Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
+          $tag = $env:RELEASE_TAG
           $zip = "ApkStart-$tag-win64-portable.zip"
-          # 幂等：release 已存在（如重跑 / 重推 tag）就跳过 create，只上传资产
+          # å¹‚ç­‰ï¼šrelease å·²å­˜åœ¨ï¼ˆå¦‚é‡è·‘ / é‡æŽ¨ tagï¼‰å°±è·³è¿‡ createï¼Œåªä¸Šä¼ èµ„äº§
           $existing = gh release view $tag --json tagName -q .tagName 2>$null
-          # 有手写的发版说明就用它（.github/release-notes-<tag>.md），比 --generate-notes
-          # 的「Full Changelog」有用得多；没有才退回自动生成。
+          # æœ‰æ‰‹å†™çš„å‘ç‰ˆè¯´æ˜Žå°±ç”¨å®ƒï¼ˆ.github/release-notes-<tag>.mdï¼‰ï¼Œæ¯” --generate-notes
+          # çš„ã€ŒFull Changelogã€æœ‰ç”¨å¾—å¤šï¼›æ²¡æœ‰æ‰é€€å›žè‡ªåŠ¨ç”Ÿæˆã€‚
           $notes = ".github/release-notes-$tag.md"
           if (-not $existing) {
             if (Test-Path $notes) {
@@ -72,33 +90,36 @@ jobs:
             gh release upload $tag $zip --clobber
             if ($LASTEXITCODE -eq 0) { $ok = $true } else { Start-Sleep -Seconds 15 }
           }
-          if (-not $ok) { Write-Error "上传失败: $zip"; exit 1 }
+          if (-not $ok) { Write-Error "ä¸Šä¼ å¤±è´¥: $zip"; exit 1 }
           gh release view $tag --json assets --jq '.assets[].name'
 
-      # 同步到 Gitee：国内直连 GitHub 只有几十 KB/s，Gitee 通常能跑几 MB/s。
-      # 便携包压紧后约 99.6MB，在 Gitee 单文件上限（100MB）以内，直接放一个整包，
-      # 用户点开就能解压；只有超限时 publish-gitee.js 才退回 .part1/.part2 分片。
-      # Setup（1.4GB）与运行时整包（1.4GB）超限太多，只留在 GitHub ——
-      # 应用端对「哪个源有资产」是取并集的，不影响更新。
-      # Gitee 同步「缺 token / 网络不通」只告警不阻断：否则整 build job 变红，
-      # 下面 needs: build 的 full job 会被整段跳过，连 GitHub 自己的 Setup / 运行时整包都发不出。
-      # 缺 token 时这一步仍会在日志里标红（continue-on-error 是「可见但非致命」），不静默。
-      - name: 同步便携版到 Gitee
+      # åŒæ­¥åˆ° Giteeï¼šå›½å†…ç›´è¿ž GitHub åªæœ‰å‡ å KB/sï¼ŒGitee é€šå¸¸èƒ½è·‘å‡  MB/sã€‚
+      # ä¾¿æºåŒ…åŽ‹ç´§åŽçº¦ 99.6MBï¼Œåœ¨ Gitee å•æ–‡ä»¶ä¸Šé™ï¼ˆ100MBï¼‰ä»¥å†…ï¼Œç›´æŽ¥æ”¾ä¸€ä¸ªæ•´åŒ…ï¼Œ
+      # ç”¨æˆ·ç‚¹å¼€å°±èƒ½è§£åŽ‹ï¼›åªæœ‰è¶…é™æ—¶ publish-gitee.js æ‰é€€å›ž .part1/.part2 åˆ†ç‰‡ã€‚
+      # Setupï¼ˆ1.4GBï¼‰ä¸Žè¿è¡Œæ—¶æ•´åŒ…ï¼ˆ1.4GBï¼‰è¶…é™å¤ªå¤šï¼Œåªç•™åœ¨ GitHub â€”â€”
+      # åº”ç”¨ç«¯å¯¹ã€Œå“ªä¸ªæºæœ‰èµ„äº§ã€æ˜¯å–å¹¶é›†çš„ï¼Œä¸å½±å“æ›´æ–°ã€‚
+      # Gitee åŒæ­¥ã€Œç¼º token / ç½‘ç»œä¸é€šã€åªå‘Šè­¦ä¸é˜»æ–­ï¼šå¦åˆ™æ•´ build job å˜çº¢ï¼Œ
+      # ä¸‹é¢ needs: build çš„ full job ä¼šè¢«æ•´æ®µè·³è¿‡ï¼Œè¿ž GitHub è‡ªå·±çš„ Setup / è¿è¡Œæ—¶æ•´åŒ…éƒ½å‘ä¸å‡ºã€‚
+      # ç¼º token æ—¶è¿™ä¸€æ­¥ä»ä¼šåœ¨æ—¥å¿—é‡Œæ ‡çº¢ï¼ˆcontinue-on-error æ˜¯ã€Œå¯è§ä½†éžè‡´å‘½ã€ï¼‰ï¼Œä¸é™é»˜ã€‚
+      - name: åŒæ­¥ä¾¿æºç‰ˆåˆ° Gitee
+        if: github.repository == 'RoutineMiku/apkstart' || secrets.GITEE_TOKEN != ''
         continue-on-error: true
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         shell: pwsh
         run: |
-          # 以前这里是「没配 token 就静默跳过、这一步仍显示成功」——
-          # v0.3.4 就这样在 Gitee 上悄悄少了一个版本，事后才发现。
-          # 现在缺 token 直接让这一步失败，宁可红一次也别再无声无息。
+          # å¦‚æžœæœªé…ç½® GITEE_TOKENï¼šå®˜æ–¹ä»“åº“æŠ¥é”™æé†’ï¼›Fork ä»“åº“åˆ™ä¼˜é›…è·³è¿‡
           if (-not $env:GITEE_TOKEN) {
-            Write-Error "缺少 GITEE_TOKEN：Gitee 这一版不会有安装包。请在 Settings → Secrets and variables → Actions 添加 GITEE_TOKEN（勾选 projects + pull_requests 之外的 releases 权限即可）。"
-            exit 1
+            if ($env:GITHUB_REPOSITORY -eq 'RoutineMiku/apkstart') {
+              Write-Error "ç¼ºå°‘ GITEE_TOKENï¼šGitee è¿™ä¸€ç‰ˆä¸ä¼šæœ‰å®‰è£…åŒ…ã€‚è¯·åœ¨ Settings â†’ Secrets and variables â†’ Actions æ·»åŠ  GITEE_TOKENï¼ˆå‹¾é€‰ projects + pull_requests ä¹‹å¤–çš„ releases æƒé™å³å¯ï¼‰ã€‚"
+              exit 1
+            } else {
+              Write-Host "::notice::æœªé…ç½® GITEE_TOKENï¼Œå·²è·³è¿‡åŒæ­¥åˆ° Giteeï¼ˆéžå®˜æ–¹ä¸»ä»“åº“æ— éœ€é…ç½®ï¼‰ã€‚"
+              exit 0
+            }
           }
-          $tag = "${{ github.ref_name }}"
-          if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
-          # 发布说明与 GitHub 用同一份，别让 Gitee 那边只剩一句「便携版安装包」
+          $tag = $env:RELEASE_TAG
+          # å‘å¸ƒè¯´æ˜Žä¸Ž GitHub ç”¨åŒä¸€ä»½ï¼Œåˆ«è®© Gitee é‚£è¾¹åªå‰©ä¸€å¥ã€Œä¾¿æºç‰ˆå®‰è£…åŒ…ã€
           $notes = ".github/release-notes-$tag.md"
           if (Test-Path $notes) {
             node tools/publish-gitee.js $tag --zip "ApkStart-$tag-win64-portable.zip" --notes $notes
@@ -108,104 +129,116 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   full:
-    name: 构建完整版（内置运行时，离线开箱即用）
+    name: æž„å»ºå®Œæ•´ç‰ˆï¼ˆå†…ç½®è¿è¡Œæ—¶ï¼Œç¦»çº¿å¼€ç®±å³ç”¨ï¼‰
     runs-on: windows-latest
     needs: build
     steps:
       - uses: actions/checkout@v4
+
+      - name: è§£æžç‰ˆæœ¬ Tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          if (-not $tag) {
+            $tag = "${{ github.ref_name }}"
+            if ($tag -eq 'main' -or $tag -eq 'master') {
+              $ver = (Get-Content package.json -Raw | ConvertFrom-Json).version
+              $tag = "v$ver"
+            }
+          }
+          if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
+          Write-Host "Release Tag: $tag"
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: 安装依赖
+      - name: å®‰è£…ä¾èµ–
         run: npm ci
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
-      # 从 Google 官方源组装运行时（emulator + platform-tools + aehd + Play x86_64 镜像）。
-      # 输出到 engine/，与本地开发时的目录结构一致。
-      - name: 组装运行时
+      # ä»Ž Google å®˜æ–¹æºç»„è£…è¿è¡Œæ—¶ï¼ˆemulator + platform-tools + aehd + Play x86_64 é•œåƒï¼‰ã€‚
+      # è¾“å‡ºåˆ° engine/ï¼Œä¸Žæœ¬åœ°å¼€å‘æ—¶çš„ç›®å½•ç»“æž„ä¸€è‡´ã€‚
+      - name: ç»„è£…è¿è¡Œæ—¶
         run: node build/fetch-runtime.js engine
 
-      # prepare-runtime 会把 system.img/vendor.img 压成 xz(LZMA2)。
-      # CI runner 只有 2 核：XZ_PRESET=6 把压缩时间从 ~2h 降到 ~40min（体积 +3%）。
-      # XZ_TIMEOUT_MS 是看门狗：超时自动 kill 并落 gzip 兜底，
-      # 绝不重演「stdin 没接 EOF → 0 字节输出 → 挂死 3 小时」。
-      - name: 准备运行时（xz 压缩，CI 降档加速）
+      # prepare-runtime ä¼šæŠŠ system.img/vendor.img åŽ‹æˆ xz(LZMA2)ã€‚
+      # CI runner åªæœ‰ 2 æ ¸ï¼šXZ_PRESET=6 æŠŠåŽ‹ç¼©æ—¶é—´ä»Ž ~2h é™åˆ° ~40minï¼ˆä½“ç§¯ +3%ï¼‰ã€‚
+      # XZ_TIMEOUT_MS æ˜¯çœ‹é—¨ç‹—ï¼šè¶…æ—¶è‡ªåŠ¨ kill å¹¶è½ gzip å…œåº•ï¼Œ
+      # ç»ä¸é‡æ¼”ã€Œstdin æ²¡æŽ¥ EOF â†’ 0 å­—èŠ‚è¾“å‡º â†’ æŒ‚æ­» 3 å°æ—¶ã€ã€‚
+      - name: å‡†å¤‡è¿è¡Œæ—¶ï¼ˆxz åŽ‹ç¼©ï¼ŒCI é™æ¡£åŠ é€Ÿï¼‰
         run: node build/prepare-runtime.js --force
         env:
           XZ_PRESET: '6'
           XZ_TIMEOUT_MS: '3600000'
 
-      # 内置微软 VC++ 2015-2022 x64 运行库：安卓模拟器（Qt6）与 qemu 都依赖它，
-      # 缺了在「其他电脑」上会直接起不来（0xc0000135 / MSVCP140 缺失）。
-      # 放到 build/runtime 内，随 extraResources 一起打进安装包；离线也能一键安装。
-      - name: 下载 VC++ 运行库（离线内置）
+      # å†…ç½®å¾®è½¯ VC++ 2015-2022 x64 è¿è¡Œåº“ï¼šå®‰å“æ¨¡æ‹Ÿå™¨ï¼ˆQt6ï¼‰ä¸Ž qemu éƒ½ä¾èµ–å®ƒï¼Œ
+      # ç¼ºäº†åœ¨ã€Œå…¶ä»–ç”µè„‘ã€ä¸Šä¼šç›´æŽ¥èµ·ä¸æ¥ï¼ˆ0xc0000135 / MSVCP140 ç¼ºå¤±ï¼‰ã€‚
+      # æ”¾åˆ° build/runtime å†…ï¼Œéš extraResources ä¸€èµ·æ‰“è¿›å®‰è£…åŒ…ï¼›ç¦»çº¿ä¹Ÿèƒ½ä¸€é”®å®‰è£…ã€‚
+      - name: ä¸‹è½½ VC++ è¿è¡Œåº“ï¼ˆç¦»çº¿å†…ç½®ï¼‰
         shell: pwsh
         run: |
           $dir = "build\runtime"
           if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
           $out = "$dir\vc_redist.x64.exe"
-          Write-Output "下载 VC++ 2015-2022 x64 运行库…"
+          Write-Output "ä¸‹è½½ VC++ 2015-2022 x64 è¿è¡Œåº“â€¦"
           curl.exe -L -o $out "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-          if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 1MB) { Write-Error "vc_redist 下载失败" }
+          if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 1MB) { Write-Error "vc_redist ä¸‹è½½å¤±è´¥" }
           Get-Item $out | Select-Object Name, Length
 
-      # 不打 git tag 时 electron-builder 不会隐式发布；打了 tag 也会因为本 job 没有
-      # GH_TOKEN 而报 "GitHub Personal Access Token is not set" 后退出 1（之前完整版一直失败的根因）。
-      # 这里显式 --publish never，安装包由后面「上传完整版到 Release」步骤用 gh release upload 上传。
-      - name: 构建完整版安装包
+      # ä¸æ‰“ git tag æ—¶ electron-builder ä¸ä¼šéšå¼å‘å¸ƒï¼›æ‰“äº† tag ä¹Ÿä¼šå› ä¸ºæœ¬ job æ²¡æœ‰
+      # GH_TOKEN è€ŒæŠ¥ "GitHub Personal Access Token is not set" åŽé€€å‡º 1ï¼ˆä¹‹å‰å®Œæ•´ç‰ˆä¸€ç›´å¤±è´¥çš„æ ¹å› ï¼‰ã€‚
+      # è¿™é‡Œæ˜¾å¼ --publish neverï¼Œå®‰è£…åŒ…ç”±åŽé¢ã€Œä¸Šä¼ å®Œæ•´ç‰ˆåˆ° Releaseã€æ­¥éª¤ç”¨ gh release upload ä¸Šä¼ ã€‚
+      - name: æž„å»ºå®Œæ•´ç‰ˆå®‰è£…åŒ…
         run: npx electron-builder --win nsis --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: 上传完整版到 Release
+      - name: ä¸Šä¼ å®Œæ•´ç‰ˆåˆ° Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
+          $tag = $env:RELEASE_TAG
           $setup = Get-ChildItem dist/release/*Setup.exe | Select-Object -First 1
-          if (-not $setup) { Write-Error "未找到 Setup.exe"; exit 1 }
-          Write-Output ("上传 {0} ({1:N0} MB)" -f $setup.Name, ($setup.Length / 1MB))
+          if (-not $setup) { Write-Error "æœªæ‰¾åˆ° Setup.exe"; exit 1 }
+          Write-Output ("ä¸Šä¼  {0} ({1:N0} MB)" -f $setup.Name, ($setup.Length / 1MB))
           $ok = $false
           for ($i = 1; $i -le 3 -and -not $ok; $i++) {
             gh release upload $tag $setup.FullName --clobber
             if ($LASTEXITCODE -eq 0) { $ok = $true } else { Start-Sleep -Seconds 20 }
           }
-          if (-not $ok) { Write-Error "上传失败: $($setup.Name)"; exit 1 }
+          if (-not $ok) { Write-Error "ä¸Šä¼ å¤±è´¥: $($setup.Name)"; exit 1 }
           gh release view $tag --json assets --jq '.assets[] | "\(.name) \(.size)"'
 
-      # 轻量版（不带运行时）不再去 dl.google.com 逐个下 emulator / 系统镜像，
-      # 而是直接下这一个整包 —— 下载源与「软件更新」同为本项目 GitHub Release，
-      # 国内网络稳定性、出问题后的排障都只在一个地方。
-      # 内容已经是 .xz 压缩过的镜像，这里用 bsdtar 直接打 zip（不再二次压缩，省几十分钟）。
-      - name: 打包运行时整包（轻量版下载源）
+      # è½»é‡ç‰ˆï¼ˆä¸å¸¦è¿è¡Œæ—¶ï¼‰ä¸å†åŽ» dl.google.com é€ä¸ªä¸‹ emulator / ç³»ç»Ÿé•œåƒï¼Œ
+      # è€Œæ˜¯ç›´æŽ¥ä¸‹è¿™ä¸€ä¸ªæ•´åŒ… â€”â€” ä¸‹è½½æºä¸Žã€Œè½¯ä»¶æ›´æ–°ã€åŒä¸ºæœ¬é¡¹ç›® GitHub Releaseï¼Œ
+      # å›½å†…ç½‘ç»œç¨³å®šæ€§ã€å‡ºé—®é¢˜åŽçš„æŽ’éšœéƒ½åªåœ¨ä¸€ä¸ªåœ°æ–¹ã€‚
+      # å†…å®¹å·²ç»æ˜¯ .xz åŽ‹ç¼©è¿‡çš„é•œåƒï¼Œè¿™é‡Œç”¨ bsdtar ç›´æŽ¥æ‰“ zipï¼ˆä¸å†äºŒæ¬¡åŽ‹ç¼©ï¼Œçœå‡ ååˆ†é’Ÿï¼‰ã€‚
+      - name: æ‰“åŒ…è¿è¡Œæ—¶æ•´åŒ…ï¼ˆè½»é‡ç‰ˆä¸‹è½½æºï¼‰
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
+          $tag = $env:RELEASE_TAG
           $zip = "ApkStart-runtime-$tag.zip"
-          if (-not (Test-Path "build\runtime\emulator\emulator.exe")) { Write-Error "build\runtime 不完整"; exit 1 }
+          if (-not (Test-Path "build\runtime\emulator\emulator.exe")) { Write-Error "build\runtime ä¸å®Œæ•´"; exit 1 }
           tar.exe -a -cf $zip -C "build\runtime" .
-          if ($LASTEXITCODE -ne 0) { Write-Error "打包运行时失败"; exit 1 }
+          if ($LASTEXITCODE -ne 0) { Write-Error "æ‰“åŒ…è¿è¡Œæ—¶å¤±è´¥"; exit 1 }
           Get-Item $zip | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
 
-      - name: 上传运行时整包到 Release
+      - name: ä¸Šä¼ è¿è¡Œæ—¶æ•´åŒ…åˆ° Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          if (-not $tag.StartsWith('v')) { $tag = "v$tag" }
+          $tag = $env:RELEASE_TAG
           $zip = "ApkStart-runtime-$tag.zip"
           $ok = $false
           for ($i = 1; $i -le 3 -and -not $ok; $i++) {
             gh release upload $tag $zip --clobber
             if ($LASTEXITCODE -eq 0) { $ok = $true } else { Start-Sleep -Seconds 20 }
           }
-          if (-not $ok) { Write-Error "上传失败: $zip"; exit 1 }
+          if (-not $ok) { Write-Error "ä¸Šä¼ å¤±è´¥: $zip"; exit 1 }
           gh release view $tag --json assets --jq '.assets[] | "\(.name) \(.size)"'
