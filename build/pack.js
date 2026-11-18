@@ -48,9 +48,8 @@ console.log('复制 Electron 运行时…');
 copy(ELECTRON_DIST, OUT);
 fs.rmSync(path.join(OUT, 'resources', 'default_app.asar'), { force: true });
 
-// 1.1 语言包瘦身：Electron 自带 55 种语言，合计 41MB，我们只用中文界面。
-//     只留 zh-CN / zh-TW / en-US，其余删掉（-39MB，等于整包小 15%）。
-const KEEP_LOCALES = new Set(['zh-CN.pak', 'zh-TW.pak', 'en-US.pak']);
+// 1.1 语言包瘦身：只保留中英越常用语言，其余删掉以减小体积
+const KEEP_LOCALES = new Set(['zh-CN.pak', 'zh-TW.pak', 'en-US.pak', 'vi.pak']);
 let localeSaved = 0;
 try {
   const locDir = path.join(OUT, 'locales');
